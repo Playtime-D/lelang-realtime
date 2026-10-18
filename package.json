@@ -1,0 +1,14 @@
+{
+  "name": "lelang-realtime",
+  "version": "1.0.0",
+  "description": "Aplikasi lelang online real-time",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.19.2",
+    "socket.io": "^4.7.5",
+    "sqlite3": "^6.0.1"
+  }
+}

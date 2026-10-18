@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Aplikasi Lelang Online Real-Time</title>
+    <script src="/socket.io/socket.io.js"></script>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; display: flex; justify-content: center; }
+        .container { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); width: 420px; }
+        h2 { color: #1e293b; margin-top: 0; }
+        .badge { background: #e0f2fe; color: #0369a1; padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .price { font-size: 26px; color: #16a34a; font-weight: bold; margin: 10px 0; }
+        .timer { font-size: 15px; color: #dc2626; font-weight: bold; margin-bottom: 15px; }
+        .form-group { margin-bottom: 15px; }
+        label { display: block; margin-bottom: 5px; font-weight: 600; font-size: 13px; color: #475569; }
+        select, input, button { width: 100%; padding: 10px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+        button { background: #2563eb; color: white; border: none; font-weight: bold; cursor: pointer; margin-top: 5px; transition: background 0.2s; }
+        button:hover { background: #1d4ed8; }
+        button:disabled { background: #9ca3af; cursor: not-allowed; }
+        .alert { padding: 10px; margin-bottom: 15px; border-radius: 6px; font-size: 13px; display: none; }
+        .alert-error { background: #fee2e2; color: #991b1b; }
+        .alert-success { background: #dcfce7; color: #166534; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="form-group">
+        <label>Pilih Barang Lelang:</label>
+        <select id="auctionSelect" onchange="changeSelectedAuction()">
+            <option value="">Memuat daftar barang...</option>
+        </select>
+    </div>
+
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
+
+    <span id="itemCategory" class="badge">Kategori</span>
+    <h2 id="itemName">Pilih barang di atas</h2>
+    
+    <div class="timer" id="timerDisplay">Sisa Waktu: --:--</div>
+    
+    <p style="margin: 0; color: #64748b; font-size: 13px;">Harga Tertinggi Saat Ini:</p>
+    <div class="price" id="currentPrice">Rp 0</div>
+    <p style="font-size: 13px; color: #475569;">Penawar Tertinggi: <strong id="highestBidder">-</strong></p>
+    
+    <hr style="border: 0; border-top: 1px solid #e2e8f0; margin: 15px 0;">
+
+    <div id="alertBox" class="alert"></div>
+
+    <div id="bidSection">
+        <div class="form-group">
+            <label>Nama Anda:</label>
+            <input type="text" id="bidderName" placeholder="Masukkan nama Anda">
+        </div>
+        <div class="form-group">
+            <label>Nominal Penawaran (Bid):</label>
+            <input type="number" id="bidAmount" placeholder="Masukkan nominal angka">
+            <small style="color: #64748b; font-size: 11px;" id="minBidInfo">Minimal kelipatan: -</small>
+        </div>
+        <button id="bidButton" onclick="submitBid()">Kirim Penawaran</button>
+    </div>
+</div>
+
+<script>
+    const socket = io();
+    let auctionsData = [];
+    let selectedAuctionId = null;
+    let serverEndTime = 0;
+
+    // 1. Ambil daftar barang lelang dari server saat halaman dimuat
+    async function fetchAuctions() {
+        try {
+            const response = await fetch('/api/auctions');
+            auctionsData = await response.json();
+            
+            const select = document.getElementById('auctionSelect');
+            select.innerHTML = '';
+
+            if (auctionsData.length === 0) {
+                select.innerHTML = '<option value="">Belum ada barang lelang aktif</option>';
+                return;
+            }
+
+            auctionsData.forEach(item => {
+                const opt = document.createElement('option');
+                opt.value = item.id;
+                opt.textContent = `${item.itemName} (Mulai: Rp ${item.startPrice.toLocaleString('id-ID')})`;
+                select.appendChild(opt);
+            });
+
+            // Otomatis pilih barang pertama
+            if (auctionsData.length > 0) {
+                selectedAuctionId = auctionsData[0].id;
+                select.value = selectedAuctionId;
+                updateDisplay(auctionsData[0]);
+            }
+        } catch (err) {
+            console.error('Gagal memuat data lelang:', err);
+        }
+    }
+
+    // 2. Saat user mengganti pilihan barang di dropdown
+    function changeSelectedAuction() {
+        const select = document.getElementById('auctionSelect');
+        selectedAuctionId = parseInt(select.value);
+        const item = auctionsData.find(a => a.id === selectedAuctionId);
+        if (item) updateDisplay(item);
+    }
+
+    // 3. Perbarui tampilan UI berdasarkan barang yang dipilih
+    function updateDisplay(item) {
+        document.getElementById('itemCategory').innerText = item.category;
+        document.getElementById('itemName').innerText = item.itemName;
+        document.getElementById('currentPrice').innerText = 'Rp ' + item.currentPrice.toLocaleString('id-ID');
+        document.getElementById('highestBidder').innerText = item.highestBidder;
+        serverEndTime = item.endTime;
+
+        const minNextBid = item.currentPrice === item.startPrice && item.highestBidder === "Belum ada" 
+            ? item.startPrice 
+            : item.currentPrice + item.bidIncrement;
+
+        document.getElementById('minBidInfo').innerText = `Minimal bid berikutnya: Rp ${minNextBid.toLocaleString('id-ID')} (Kelipatan Rp ${item.bidIncrement.toLocaleString('id-ID')})`;
+        document.getElementById('bidAmount').min = minNextBid;
+        document.getElementById('bidAmount').value = minNextBid;
+
+        if (item.status === 'ended' || Date.now() >= item.endTime) {
+            document.getElementById('timerDisplay').innerText = "LELANG TELAH BERAKHIR";
+            document.getElementById('bidButton').disabled = true;
+        } else {
+            document.getElementById('bidButton').disabled = false;
+        }
+    }
+
+    // 4. Kirim penawaran (bid) via WebSocket
+    function submitBid() {
+        const bidderName = document.getElementById('bidderName').value.trim();
+        const amount = parseInt(document.getElementById('bidAmount').value);
+
+        if (!bidderName) {
+            showAlert('Mohon isi nama Anda terlebih dahulu!', 'error');
+            return;
+        }
+        if (isNaN(amount)) {
+            showAlert('Masukkan nominal angka yang valid!', 'error');
+            return;
+        }
+
+        socket.emit('placeBid', { auctionId: selectedAuctionId, bidderName, amount });
+    }
+
+    // 5. Tanggapi pembaruan harga secara real-time dari server
+    socket.on('updateAuctionPrice', (data) => {
+        const item = auctionsData.find(a => a.id === data.auctionId);
+        if (item) {
+            item.currentPrice = data.currentPrice;
+            item.highestBidder = data.highestBidder;
+            if (selectedAuctionId === data.auctionId) {
+                updateDisplay(item);
+            }
+        }
+    });
+
+    socket.on('refreshAuctions', () => {
+        fetchAuctions(); // Refresh daftar jika admin menambah barang baru
+    });
+
+    socket.on('bidResponse', (res) => {
+        showAlert(res.message, res.success ? 'success' : 'error');
+        if (res.success) {
+            fetchAuctions(); // Perbarui data lokal
+        }
+    });
+
+    // 6. Timer Hitung Mundur Real-Time
+    setInterval(() => {
+        if (!serverEndTime) return;
+        const timeLeft = serverEndTime - Date.now();
+        if (timeLeft <= 0) {
+            document.getElementById('timerDisplay').innerText = "WAKTU HABIS";
+            return;
+        }
+
+        const minutes = Math.floor((timeLeft % (1000 * 60 * 60)) / (1000 * 60));
+        const seconds = Math.floor((timeLeft % (1000 * 60)) / 1000);
+        document.getElementById('timerDisplay').innerText = `Sisa Waktu: ${minutes}m ${seconds}s`;
+    }, 1000);
+
+    function showAlert(message, type) {
+        const alertBox = document.getElementById('alertBox');
+        alertBox.innerText = message;
+        alertBox.className = `alert alert-${type}`;
+        alertBox.style.display = 'block';
+        setTimeout(() => { alertBox.style.display = 'none'; }, 4000);
+    }
+
+    // Jalankan saat pertama kali halaman dibuka
+    fetchAuctions();
+</script>
+
+</body>
+</html>

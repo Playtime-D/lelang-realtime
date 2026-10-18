@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Dashboard Admin - Kelola Lelang</title>
+    <style>
+        body { font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; background: #f0f2f5; margin: 0; padding: 20px; color: #333; }
+        .container { max-width: 900px; margin: 0 auto; }
+        .card { background: white; padding: 25px; border-radius: 10px; box-shadow: 0 4px 12px rgba(0,0,0,0.08); margin-bottom: 25px; }
+        h2, h3 { margin-top: 0; color: #1e293b; }
+        .form-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 15px; }
+        .form-group { display: flex; flex-direction: column; }
+        .form-group.full { grid-column: span 2; }
+        label { font-weight: 600; font-size: 13px; margin-bottom: 6px; color: #475569; }
+        input, select, button { padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 14px; }
+        input:focus, select:focus { outline: none; border-color: #2563eb; }
+        button { background: #2563eb; color: white; border: none; font-weight: bold; cursor: pointer; transition: background 0.2s; margin-top: 10px; }
+        button:hover { background: #1d4ed8; }
+        
+        table { width: 100%; border-collapse: collapse; margin-top: 15px; }
+        th, td { text-align: left; padding: 12px; border-bottom: 1px solid #e2e8f0; font-size: 14px; }
+        th { background: #f8fafc; color: #64748b; font-weight: 600; }
+        .badge { padding: 4px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        .badge-active { background: #dcfce7; color: #15803d; }
+        .badge-ended { background: #f1f5f9; color: #64748b; }
+        
+        .alert { padding: 12px; border-radius: 6px; margin-bottom: 15px; font-size: 14px; display: none; }
+        .alert-success { background: #dcfce7; color: #166534; border: 1px solid #bbf7d0; }
+        .alert-error { background: #fee2e2; color: #991b1b; border: 1px solid #fecaca; }
+    </style>
+</head>
+<body>
+
+<div class="container">
+    <div class="card">
+        <h2>Tambah Barang Lelang Baru</h2>
+        <div id="alertBox" class="alert"></div>
+
+        <form id="addAuctionForm">
+            <div class="form-grid">
+                <div class="form-group full">
+                    <label>Nama Barang:</label>
+                    <input type="text" id="itemName" placeholder="Contoh: Laptop Asus ROG Strix" required>
+                </div>
+                <div class="form-group">
+                    <label>Kategori Barang:</label>
+                    <select id="category" required>
+                        <option value="Elektronik">Elektronik</option>
+                        <option value="Fotografi">Fotografi</option>
+                        <option value="Otomotif">Otomotif</option>
+                        <option value="Seni & Koleksi">Seni & Koleksi</option>
+                        <option value="Lainnya">Lainnya</option>
+                    </select>
+                </div>
+                <div class="form-group">
+                    <label>Durasi Lelang (Dalam Menit):</label>
+                    <input type="number" id="durationMinutes" placeholder="Contoh: 30" min="1" value="15" required>
+                </div>
+                <div class="form-group">
+                    <label>Harga Minimal Awal (Rp):</label>
+                    <input type="number" id="startPrice" placeholder="Contoh: 1000000" min="1000" required>
+                </div>
+                <div class="form-group">
+                    <label>Kelipatan Harga Penawaran / Bid (Rp):</label>
+                    <input type="number" id="bidIncrement" placeholder="Contoh: 50000" min="1000" required>
+                </div>
+            </div>
+            <button type="submit">Terbitkan Barang Lelang</button>
+        </form>
+    </div>
+
+    <div class="card">
+        <h3>Daftar Barang Lelang Aktif & Riwayat</h3>
+        <table>
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Nama Barang</th>
+                    <th>Kategori</th>
+                    <th>Harga Saat Ini</th>
+                    <th>Penawar Tertinggi</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="auctionTableBody">
+                <tr>
+                    <td colspan="6" style="text-align: center; color: #94a3b8;">Memuat data lelang...</td>
+                </tr>
+            </tbody>
+        </table>
+    </div>
+</div>
+
+<script>
+    // 1. Fungsi untuk Mengirim Data Barang Baru ke Server Backend
+    document.getElementById('addAuctionForm').addEventListener('submit', async function(e) {
+        e.preventDefault();
+
+        const formData = {
+            itemName: document.getElementById('itemName').value,
+            category: document.getElementById('category').value,
+            startPrice: parseInt(document.getElementById('startPrice').value),
+            bidIncrement: parseInt(document.getElementById('bidIncrement').value),
+            durationMinutes: parseInt(document.getElementById('durationMinutes').value)
+        };
+
+        try {
+            const response = await fetch('/api/auctions', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(formData)
+            });
+
+            const result = await response.json();
+
+            if (response.ok) {
+                showAlert('Barang lelang berhasil ditambahkan!', 'success');
+                document.getElementById('addAuctionForm').reset();
+                loadAuctionList(); // Perbarui tabel secara langsung
+            } else {
+                showAlert('Gagal menambah barang: ' + result.error, 'error');
+            }
+        } catch (err) {
+            showAlert('Terjadi kesalahan koneksi ke server.', 'error');
+        }
+    });
+
+    // 2. Fungsi untuk Mengambil & Menampilkan Daftar Barang Lelang
+    async function loadAuctionList() {
+        try {
+            const response = await fetch('/api/auctions');
+            const data = await response.json();
+
+            const tableBody = document.getElementById('auctionTableBody');
+            tableBody.innerHTML = '';
+
+            if (data.length === 0) {
+                tableBody.innerHTML = '<tr><td colspan="6" style="text-align: center; color: #94a3b8;">Belum ada barang lelang.</td></tr>';
+                return;
+            }
+
+            data.forEach(item => {
+                const row = document.createElement('tr');
+                row.innerHTML = `
+                    <td>#${item.id}</td>
+                    <td><strong>${item.itemName}</strong></td>
+                    <td>${item.category}</td>
+                    <td style="color: #16a34a; font-weight: bold;">Rp ${item.currentPrice.toLocaleString('id-ID')}</td>
+                    <td>${item.highestBidder}</td>
+                    <td><span class="badge ${item.status === 'active' ? 'badge-active' : 'badge-ended'}">${item.status.toUpperCase()}</span></td>
+                `;
+                tableBody.appendChild(row);
+            });
+        } catch (err) {
+            console.error('Gagal memuat tabel lelang:', err);
+        }
+    }
+
+    function showAlert(message, type) {
+        const alertBox = document.getElementById('alertBox');
+        alertBox.innerText = message;
+        alertBox.className = `alert alert-${type}`;
+        alertBox.style.display = 'block';
+        setTimeout(() => { alertBox.style.display = 'none'; }, 4000);
+    }
+
+    // Muat daftar barang saat pertama kali halaman admin dibuka
+    loadAuctionList();
+</script>
+
+</body>
+</html>
